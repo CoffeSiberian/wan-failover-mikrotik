@@ -1,3 +1,4 @@
+use chrono::Local;
 use std::io::Read;
 use std::process::Command;
 
@@ -11,6 +12,10 @@ struct WanInterface<'a> {
     name: &'a str,
     vlan: &'a str,
     routes: Vec<&'a str>,
+}
+
+fn log_time(msg: &str) -> String {
+    format!("[{}] {}", Local::now().format("%Y-%m-%d %H:%M:%S"), msg)
 }
 
 fn set_status_route(ssh_session: &ssh2::Session, comment: &str, enable: bool) {
@@ -85,10 +90,10 @@ fn check_and_update_wan(
             .ok_or_else(|| format!("Failed to get route status: {}", route))?;
 
         if is_up && !status {
-            println!("{} Nuevamente activa", wan.name);
+            println!("{}", log_time(&format!("{} Nuevamente activa", wan.name)));
             set_status_route(ssh_session, route, true);
         } else if !is_up {
-            eprintln!("{} Caída", wan.name);
+            println!("{}", log_time(&format!("{} Caída", wan.name)));
             set_status_route(ssh_session, route, false);
         }
     }
@@ -97,7 +102,13 @@ fn check_and_update_wan(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let ssh_session = ssh_connect::connect_ssh()?;
+    let ssh_session = match ssh_connect::connect_ssh() {
+        Ok(session) => session,
+        Err(e) => {
+            println!("{}", log_time(&format!("Error connecting via SSH: {}", e)));
+            return Err(e);
+        }
+    };
 
     let wans = vec![
         WanInterface {
@@ -126,7 +137,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             DEFAULT_PING_TIMEOUT,
         ) {
             Ok(_) => {}
-            Err(e) => eprintln!("Error processing {}: {}", wan.name, e),
+            Err(e) => {
+                println!(
+                    "{}",
+                    log_time(&format!("Error processing {}: {}", wan.name, e))
+                );
+            }
         }
     }
 
