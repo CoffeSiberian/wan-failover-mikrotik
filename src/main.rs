@@ -63,7 +63,7 @@ fn ping_to_interface(destination: &str, interface: &str, count: u32, timeout_seg
 
 fn main() {
     let destination_ping = "one.one.one.one";
-    let count = 3;
+    let count = 2;
     let timeout_seg = 1;
 
     let ssh_connection = ssh_connect::connect_ssh();
@@ -79,24 +79,27 @@ fn main() {
     // Movistar
     let wan1 = ping_to_interface(destination_ping, "vlan50", count, timeout_seg);
 
-    // ingbell
+    // Ingbell
     let wan2 = ping_to_interface(destination_ping, "vlan51", count, timeout_seg);
 
     // Mundo
     let wan3 = ping_to_interface(destination_ping, "vlan52", count, timeout_seg);
 
     if wan1 {
-        let status = match get_status_route(&ssh_session, "Invitados 1") {
+        let status = match get_status_route(&ssh_session, "LAN ROUTE 1") {
             Some(s) => s,
             None => {
+                eprintln!("Fallo al obtener el estado de la ruta 'LAN ROUTE 1'");
                 return;
             }
         };
 
         if !status {
+            println!("WAN 1 Nuevamente activa");
             set_status_route(&ssh_session, "LAN ROUTE 1", true);
         }
     } else {
+        eprintln!("WAN 1 Caída");
         set_status_route(&ssh_session, "LAN ROUTE 1", false);
     }
 
@@ -104,14 +107,17 @@ fn main() {
         let status = match get_status_route(&ssh_session, "LAN ROUTE 2") {
             Some(s) => s,
             None => {
+                eprintln!("Fallo al obtener el estado de la ruta 'LAN ROUTE 2'");
                 return;
             }
         };
 
         if !status {
+            println!("WAN 2 Nuevamente activa");
             set_status_route(&ssh_session, "LAN ROUTE 2", true);
         }
     } else {
+        eprintln!("WAN 2 Caída");
         set_status_route(&ssh_session, "LAN ROUTE 2", false);
     }
 
@@ -119,23 +125,28 @@ fn main() {
         let status_inv_1 = match get_status_route(&ssh_session, "Invitados 1") {
             Some(s) => s,
             None => {
+                eprintln!("Fallo al obtener el estado de la ruta 'Invitados 1'");
                 return;
             }
         };
-
         if !status_inv_1 {
+            println!("WAN 3 Nuevamente activa");
             set_status_route(&ssh_session, "Invitados 1", true);
         }
+
         let status_inv_2 = match get_status_route(&ssh_session, "Invitados 2") {
             Some(s) => s,
             None => {
+                eprintln!("Fallo al obtener el estado de la ruta 'Invitados 2'");
                 return;
             }
         };
         if !status_inv_2 {
+            println!("WAN 3 Nuevamente activa");
             set_status_route(&ssh_session, "Invitados 2", true);
         }
     } else {
+        eprintln!("WAN 3 Caída");
         set_status_route(&ssh_session, "Invitados 1", false);
         set_status_route(&ssh_session, "Invitados 2", false);
     }
