@@ -15,9 +15,11 @@ A Rust-based monitoring tool that automatically manages WAN failover on MikroTik
 The application performs the following operations:
 
 1. Establishes an SSH connection to the MikroTik router
-2. Pings a destination (default: one.one.one.one) through each WAN interface
-3. Based on ping results, enables or disables corresponding routes in the MikroTik router
-4. Manages routing rules for LAN and guest networks
+2. Iterates through configured WAN interfaces with their associated routes
+3. Pings a destination (default: one.one.one.one) through each WAN interface's VLAN
+4. Checks the current status of each route in the MikroTik router
+5. Based on ping results, automatically enables or disables corresponding routes
+6. Logs WAN status changes (activation/deactivation) to the console
 
 ## Prerequisites
 
@@ -52,29 +54,53 @@ MT_SSH_PASS=your_password      # SSH password
 
 By default, the application monitors these VLAN interfaces:
 
--   **WAN 1** (Movistar): `vlan50` → Controls route: `LAN ROUTE 1`
--   **WAN 2** (Ingbell): `vlan51` → Controls route: `LAN ROUTE 2`
--   **WAN 3** (Mundo): `vlan52` → Controls routes: `Invitados 1`, `Invitados 2`
+-   **WAN 1**: `vlan50` → Controls route: `LAN ROUTE 1`
+-   **WAN 2**: `vlan51` → Controls route: `LAN ROUTE 2`
+-   **WAN 3**: `vlan52` → Controls routes: `Invitados 1`, `Invitados 2`
 
-To modify these settings, edit the `src/main.rs` file:
+To modify these settings, edit the `wans` vector in `src/main.rs`:
 
 ```rust
-// Change interface names
-let wan1 = ping_to_interface(destination_ping, "vlan50", count, timeout_seg);
-
-// Change route comments
-set_status_route(&ssh_session, "LAN ROUTE 1", true);
+let wans = vec![
+    WanInterface {
+        name: "WAN 1",
+        vlan: "vlan50",
+        routes: vec!["LAN ROUTE 1"],
+    },
+    WanInterface {
+        name: "WAN 2",
+        vlan: "vlan51",
+        routes: vec!["LAN ROUTE 2"],
+    },
+    WanInterface {
+        name: "WAN 3",
+        vlan: "vlan52",
+        routes: vec!["Invitados 1", "Invitados 2"],
+    },
+];
 ```
+
+Each `WanInterface` struct contains:
+
+-   `name`: Descriptive name for logging purposes
+-   `vlan`: VLAN interface to monitor via ping
+-   `routes`: List of MikroTik route comments to enable/disable
 
 ### Ping Settings
 
-Current ping configuration:
+Current ping configuration (defined as constants in `src/main.rs`):
 
--   **Destination**: `one.one.one.one` (Cloudflare DNS)
--   **Count**: 2 packets
--   **Timeout**: 1 second per packet
+-   **Destination**: `one.one.one.one` (Cloudflare DNS) - `DEFAULT_PING_DESTINATION`
+-   **Count**: 2 packets - `DEFAULT_PING_COUNT`
+-   **Timeout**: 1 second per packet - `DEFAULT_PING_TIMEOUT`
 
-Modify these in the `main()` function if needed.
+Modify these constants at the top of the file if needed:
+
+```rust
+const DEFAULT_PING_DESTINATION: &str = "one.one.one.one";
+const DEFAULT_PING_COUNT: u32 = 2;
+const DEFAULT_PING_TIMEOUT: u64 = 1;
+```
 
 ## MikroTik Router Configuration
 
@@ -172,7 +198,31 @@ For periodic execution, add to crontab:
 ├── README.md             # This file
 ├── version               # Version file
 ├── src/
-│   ├── main.rs          # Main application logic and WAN monitoring
+│   ├── main.rs          # Main application logic, WAN monitoring, and route management
 │   └── ssh_connect.rs   # SSH connection handling
 └── target/              # Build artifacts (generated)
 ```
+
+## Key Functions
+
+### `check_and_update_wan()`
+
+Main monitoring function that checks each WAN interface and updates routes accordingly:
+
+-   Pings the destination through the specified VLAN interface
+-   Retrieves current route status from MikroTik
+-   Enables routes if WAN is up and currently disabled
+-   Disables routes if WAN is down
+-   Logs status changes to console
+
+### `get_status_route()`
+
+Queries MikroTik router to check if a route is currently enabled or disabled.
+
+### `set_status_route()`
+
+Executes MikroTik commands to enable or disable routes based on WAN status.
+
+### `ping_to_interface()`
+
+Performs ICMP ping tests through a specific network interface to verify connectivity.
