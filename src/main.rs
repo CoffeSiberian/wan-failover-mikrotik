@@ -3,6 +3,16 @@ use std::process::Command;
 
 mod ssh_connect;
 
+const DEFAULT_PING_DESTINATION: &str = "one.one.one.one";
+const DEFAULT_PING_COUNT: u32 = 2;
+const DEFAULT_PING_TIMEOUT: u64 = 1;
+
+struct WanInterface<'a> {
+    name: &'a str,
+    vlan: &'a str,
+    routes: Vec<&'a str>,
+}
+
 fn set_status_route(ssh_session: &ssh2::Session, comment: &str, enable: bool) {
     let command = if enable {
         format!("/ip route enable [find where comment=\"{}\"]", comment)
@@ -61,93 +71,64 @@ fn ping_to_interface(destination: &str, interface: &str, count: u32, timeout_seg
     }
 }
 
-fn main() {
-    let destination_ping = "one.one.one.one";
-    let count = 2;
-    let timeout_seg = 1;
+fn check_and_update_wan(
+    ssh_session: &ssh2::Session,
+    wan: &WanInterface,
+    destination: &str,
+    count: u32,
+    timeout: u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let is_up = ping_to_interface(destination, wan.vlan, count, timeout);
 
-    let ssh_connection = ssh_connect::connect_ssh();
+    for route in &wan.routes {
+        let status = get_status_route(ssh_session, route)
+            .ok_or_else(|| format!("Failed to get route status: {}", route))?;
 
-    let ssh_session = match ssh_connection {
-        Ok(_session) => _session,
-        Err(e) => {
-            eprintln!("Failed to establish SSH connection: {}", e);
-            return;
+        if is_up && !status {
+            println!("{} Nuevamente activa", wan.name);
+            set_status_route(ssh_session, route, true);
+        } else if !is_up {
+            eprintln!("{} Caída", wan.name);
+            set_status_route(ssh_session, route, false);
         }
-    };
-
-    // Movistar
-    let wan1 = ping_to_interface(destination_ping, "vlan50", count, timeout_seg);
-
-    // Ingbell
-    let wan2 = ping_to_interface(destination_ping, "vlan51", count, timeout_seg);
-
-    // Mundo
-    let wan3 = ping_to_interface(destination_ping, "vlan52", count, timeout_seg);
-
-    if wan1 {
-        let status = match get_status_route(&ssh_session, "LAN ROUTE 1") {
-            Some(s) => s,
-            None => {
-                eprintln!("Fallo al obtener el estado de la ruta 'LAN ROUTE 1'");
-                return;
-            }
-        };
-
-        if !status {
-            println!("WAN 1 Nuevamente activa");
-            set_status_route(&ssh_session, "LAN ROUTE 1", true);
-        }
-    } else {
-        eprintln!("WAN 1 Caída");
-        set_status_route(&ssh_session, "LAN ROUTE 1", false);
     }
 
-    if wan2 {
-        let status = match get_status_route(&ssh_session, "LAN ROUTE 2") {
-            Some(s) => s,
-            None => {
-                eprintln!("Fallo al obtener el estado de la ruta 'LAN ROUTE 2'");
-                return;
-            }
-        };
+    Ok(())
+}
 
-        if !status {
-            println!("WAN 2 Nuevamente activa");
-            set_status_route(&ssh_session, "LAN ROUTE 2", true);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let ssh_session = ssh_connect::connect_ssh()?;
+
+    let wans = vec![
+        WanInterface {
+            name: "WAN 1",
+            vlan: "vlan50",
+            routes: vec!["LAN ROUTE 1"],
+        },
+        WanInterface {
+            name: "WAN 2",
+            vlan: "vlan51",
+            routes: vec!["LAN ROUTE 2"],
+        },
+        WanInterface {
+            name: "WAN 3",
+            vlan: "vlan52",
+            routes: vec!["Invitados 1", "Invitados 2"],
+        },
+    ];
+
+    for wan in wans {
+        match check_and_update_wan(
+            &ssh_session,
+            &wan,
+            DEFAULT_PING_DESTINATION,
+            DEFAULT_PING_COUNT,
+            DEFAULT_PING_TIMEOUT,
+        ) {
+            Ok(_) => {}
+            Err(e) => eprintln!("Error processing {}: {}", wan.name, e),
         }
-    } else {
-        eprintln!("WAN 2 Caída");
-        set_status_route(&ssh_session, "LAN ROUTE 2", false);
     }
 
-    if wan3 {
-        let status_inv_1 = match get_status_route(&ssh_session, "Invitados 1") {
-            Some(s) => s,
-            None => {
-                eprintln!("Fallo al obtener el estado de la ruta 'Invitados 1'");
-                return;
-            }
-        };
-        if !status_inv_1 {
-            println!("WAN 3 Nuevamente activa");
-            set_status_route(&ssh_session, "Invitados 1", true);
-        }
-
-        let status_inv_2 = match get_status_route(&ssh_session, "Invitados 2") {
-            Some(s) => s,
-            None => {
-                eprintln!("Fallo al obtener el estado de la ruta 'Invitados 2'");
-                return;
-            }
-        };
-        if !status_inv_2 {
-            println!("WAN 3 Nuevamente activa");
-            set_status_route(&ssh_session, "Invitados 2", true);
-        }
-    } else {
-        eprintln!("WAN 3 Caída");
-        set_status_route(&ssh_session, "Invitados 1", false);
-        set_status_route(&ssh_session, "Invitados 2", false);
-    }
+    Ok(())
 }
