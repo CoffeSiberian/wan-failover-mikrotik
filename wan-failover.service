@@ -1,0 +1,16 @@
+[Unit]
+Description=WAN Failover Monitor for MikroTik
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/home/debian/wan-failover/wan-failover-mikrotik
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/debian/wan-failover/wan-failover.log
+StandardError=append:/home/debian/wan-failover/wan-failover.log
+
+[Install]
+WantedBy=multi-user.target
