@@ -2,11 +2,15 @@ use chrono::Local;
 use std::io::Read;
 use std::process::Command;
 
+use std::thread;
+use std::time::Duration;
+
 mod ssh_connect;
 
 const DEFAULT_PING_DESTINATION: &str = "one.one.one.one";
 const DEFAULT_PING_COUNT: u32 = 2;
 const DEFAULT_PING_TIMEOUT: u64 = 1;
+const DEFAULT_CONTAINER_NAME: &str = "playit-playit-1";
 
 struct WanInterface<'a> {
     name: &'a str,
@@ -76,6 +80,31 @@ fn ping_to_interface(destination: &str, interface: &str, count: u32, timeout_seg
     }
 }
 
+fn docker_playit_restart() {
+    match Command::new("docker")
+        .arg("restart")
+        .arg(DEFAULT_CONTAINER_NAME)
+        .output()
+    {
+        Ok(output) => {
+            if output.status.success() {
+                println!(
+                    "{}",
+                    log_time("Docker playit container restarted successfully.")
+                );
+            } else {
+                println!("{}", log_time("Failed to restart Docker playit container."));
+            }
+        }
+        Err(e) => {
+            println!(
+                "{}",
+                log_time(&format!("Error executing docker command: {}", e))
+            );
+        }
+    }
+}
+
 fn check_and_update_wan(
     ssh_session: &ssh2::Session,
     wan: &WanInterface,
@@ -92,16 +121,22 @@ fn check_and_update_wan(
         if is_up && !status {
             println!("{}", log_time(&format!("{} Nuevamente activa", wan.name)));
             set_status_route(ssh_session, route, true);
-        } else if !is_up {
+            if wan.name == "WAN 2" {
+                docker_playit_restart();
+            }
+        } else if !is_up && status {
             println!("{}", log_time(&format!("{} Caída", wan.name)));
             set_status_route(ssh_session, route, false);
+            if wan.name == "WAN 2" {
+                docker_playit_restart();
+            }
         }
     }
 
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main_res() -> Result<(), Box<dyn std::error::Error>> {
     let ssh_session = match ssh_connect::connect_ssh() {
         Ok(session) => session,
         Err(e) => {
@@ -147,4 +182,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn main() {
+    loop {
+        match main_res() {
+            Ok(_) => {}
+            Err(e) => {
+                println!("{}", log_time(&format!("Error in main loop: {}", e)));
+            }
+        }
+
+        thread::sleep(Duration::from_secs(5));
+    }
 }
